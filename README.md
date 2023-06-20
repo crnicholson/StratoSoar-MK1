@@ -11,3 +11,6 @@ My repo for the StratoSoar project. The LightAPRS code is just a variation of th
 
 # Acknowledgements
 Thanks to Harish KC1SIO for the idea and initial work. Thanks to the NEWBS team for fostering the idea and having the high altitude project. Special thanks to Max W0MXX and Seth KC1PZY for funding and help during this project. Thanks to Bob K5TEC at NeSciTech for supplying a workspace and collaboration area. 
+
+# Nerd info
+We used a RunCam DVR with a 2N2222 transistor to close the circuit where the button is mounted. This took lots of development and didn't always go right. It highly depends on the voltage of the MCU and the amount of current your MCU can sink into the base pin of the transistor. Because of this, we had to not use the Serial Wombat and to solder a wire onto the LightAPRS. The SerialWombat can still be used to power the MOSFET, though it should be noted that the voltage goes through a series of transistor amplifiers to have enough voltage to turn on the FET. The camera on the DVR was a RunCam Atom.
