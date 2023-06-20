@@ -3,6 +3,7 @@
  <source media="(prefers-color-scheme: light)" srcset="https://github.com/charlienicholson3/StratoSoar/blob/main/schematic.png?raw=true">
  <img alt="YOUR-ALT-TEXT" src="YOUR-DEFAULT-IMAGE">
 </picture>
+
 # NOTE: This PCB is wrong. We had to change a wire. I suggest designing your own PCB.
 
 # StratoSoar
