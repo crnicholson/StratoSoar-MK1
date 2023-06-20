@@ -1,8 +1,6 @@
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BMP085_U.h>
 #include <Arduino.h>
-#include <Wire.h>
 #include <SPI.h>
+#include <Wire.h>
 #include <math.h>
 #include <stdio.h>
 #include <avr/dtostrf.h>
@@ -20,9 +18,8 @@
 #include <Servo.h>
 #include <SerialWombat.h>
 
-SerialWombat sw;    //Declare a Serial Wombat
-
-#define EEPROM1_I2C_address 0x50
+// line 580 is where the action begins
+SerialWombat sw; // declare a Serial Wombat
 
 #define Si5351Pwr     A3
 #define TCXO_Pwr      A4
@@ -45,7 +42,7 @@ SerialWombat sw;    //Declare a Serial Wombat
 #define TcxoON      digitalWrite(TCXO_Pwr, HIGH)
 #define TcxoOFF     digitalWrite(TCXO_Pwr, LOW)
 
-//#define DEVMODE // Development mode. Uncomment to enable for debugging.
+// #define DEVMODE // Development mode. Uncomment to enable for debugging.
 
 //******************************  APRS CONFIG **********************************
 char    CallSign[7]="KC1SFR";//DO NOT FORGET TO CHANGE YOUR CALLSIGN
@@ -54,7 +51,7 @@ char    Symbol='O'; // 'O' for balloon, '>' for car, for more info : http://www.
 bool    alternateSymbolTable = false ; //false = '/' , true = '\'
 
 char    comment[50] = "StratoSoar APRS Transmitter";// Max 50 char
-char    StatusMessage[50] = "Coded by KC1SFR & built by KC1SIO";
+char    StatusMessage[50] = "Made by KC1SFR and NEWBS";
 
 uint32_t GEOFENCE_APRS_frequency      = 144390000 ;//default frequency before geofencing. This variable will be updated based on GPS location.
 int32_t APRS_Freq_Correction          = -1200;     //Hz. vctcxo frequency correction for si4463
@@ -64,9 +61,9 @@ int32_t APRS_Freq_Correction          = -1200;     //Hz. vctcxo frequency correc
 uint16_t  BeaconWait=50;  //seconds sleep for next beacon (HF or VHF). This is optimized value, do not change this if possible.
 uint16_t  BattWait=60;    //seconds sleep if super capacitors/batteries are below BattMin (important if power source is solar panel) 
 float     BattMin=3.3;    // min Volts to wake up.
-float     GpsMinVolt=4.5; //min Volts for GPS to wake up. (important if power source is solar panel) 
+float     GpsMinVolt=4.0; //min Volts for GPS to wake up. (important if power source is solar panel) 
 float     WsprBattMin=4.0;//min Volts for HF (WSPR) radio module to transmit (TX) ~10 mW
-float     HighVolt=6.0; //GPS is always on if the voltage exceeds this value to protect solar caps from overcharge
+float     HighVolt=10.0; //GPS is always on if the voltage exceeds this value to protect solar caps from overcharge
 
 //******************************  HF (WSPR) CONFIG *************************************
 
@@ -180,16 +177,30 @@ Adafruit_ZeroTimer zerotimer = Adafruit_ZeroTimer(3);
 Servo servo;
 int counter = 5;
 bool validAlt = false;
-static bool validAlt2 = false;
+bool validAlt2 = false;
+bool isRecording = false;
 int maxAddress = 5;
 int addr = 0;
-int fakeAlt = 160;
-
-Adafruit_BMP085_Unified bmp2 = Adafruit_BMP085_Unified(10085);
+int prevAlt = 0;
+int alt = 0;
+int changedAlt = 0;
 
 void setup() {
   Watchdog.enable(30000);
   Watchdog.reset();
+
+  Wire.begin();
+  bmp.begin();
+  sw.begin(Wire, 0x6F);  // Initialize the Serial Wombat library to use the primary I2C port, this SerialWombat's address is 6F
+  pinMode(A2, OUTPUT);
+  digitalWrite(A2, LOW);
+  sw.pinMode(2, OUTPUT);
+  sw.digitalWrite(2, HIGH); // Turn on and off a few times to show initialization
+  delay(1000);
+  sw.digitalWrite(2, LOW);
+  delay(1000);
+  sw.digitalWrite(2, HIGH);
+  
   // While the energy rises slowly with the solar panel, 
   // using the analog reference low solves the analog measurement errors.
   analogReference(AR_INTERNAL1V65);
@@ -205,8 +216,7 @@ void setup() {
   PttOFF;
   Si4463OFF;
   TcxoOFF;
-  
-  
+
   Serial.begin(9600);//GPS
   SerialUSB.begin(115200);
   // Wait up to 5 seconds for serial to be opened, to allow catching
@@ -219,7 +229,6 @@ void setup() {
 
   SerialUSB.println(F("Starting"));
 
-
   APRS_init();
   APRS_setCallsign(CallSign, CallNumber);
   APRS_setDestination("APLIGA", 0);
@@ -230,16 +239,6 @@ void setup() {
   APRS_setSymbol(Symbol);
   APRS_setPathSize(pathSize);
 
-  servo.attach(A1);
-  delay(1000);
-  servo.write(0);
-  Wire.begin();
-  delay(1000); 
-  bmp.begin();
-  bmp2.begin();
-  sw.begin(Wire, 0x6F);  //Initialize the Serial Wombat library to use the primary I2C port, This SerialWombat's address is 6C
-  sw.pinMode(3, OUTPUT);
-
   SerialUSB.println(F(""));
   SerialUSB.print(F("APRS (VHF) CallSign: "));
   SerialUSB.print(CallSign);
@@ -249,51 +248,34 @@ void setup() {
   SerialUSB.print(F("WSPR (HF) CallSign: "));
   SerialUSB.println(hf_call);
   SerialUSB.println(F(""));
+  
+  servo.attach(A1);
+  delay(1000);
+  servo.write(0);
+  delay(1000); 
+  servo.write(90);
+  delay(1000);
+  servo.write(0);
+  /*
+  delay(10000);
+  digitalWrite(A2, HIGH); // Start recording for 6.5 seconds to test the system
+  delay(350);
+  digitalWrite(A2, LOW);
+  delay(6500);
+  digitalWrite(A2, HIGH);
+  delay(350);
+  digitalWrite(A2, LOW);
 
-  delay(5000);
+  SerialUSB.println("Everything has initialized");
+  */
+
+  sw.digitalWrite(2, LOW);
+
+  delay(500);
 }
 
 void loop() {
   Watchdog.reset();
-
-/*
-  if (gps.location.isValid()) {
-  float lat5 = gps.location.lat();
-  float lon5 = gps.location.lng();
-  
-  byte latBytes[sizeof(lat5)];
-  memcpy(&latBytes, &lat5, sizeof(lat5)); // convert the float to a byte array
-
-  byte lonBytes[sizeof(lon5)];
-  memcpy(&lonBytes, &lon5, sizeof(lon5)); // convert the float to a byte array
-
-
-  Wire.beginTransmission(8); // send the byte array to device with address 8
-  Wire.write(latBytes, sizeof(latBytes));
-  Wire.write(lonBytes, sizeof(lonBytes));
-  Wire.endTransmission();
-
-  delay(1000); // wait for 1 second
-}
-*/
-/*
-if (gps.location.isValid()) {
-  double lat5 = gps.location.lat();
-  double lon5 = gps.location.lng();
-  
-  String latStr = String(lat5, 8); 
-  String lonStr = String(lon5, 8); 
-
-  Wire.beginTransmission(8);
-  Wire.write(latStr.c_str()); 
-  delay(500);
-  Wire.write(lonStr.c_str());
-  delay(500);
-  Wire.endTransmission();
-
-}
-*/
-
 
 
 if (((readBatt() > BattMin) && GpsFirstFix) || ((readBatt() > GpsMinVolt) && !GpsFirstFix)) {
@@ -391,7 +373,7 @@ if (((readBatt() > BattMin) && GpsFirstFix) || ((readBatt() > GpsMinVolt) && !Gp
           }   
         }else {
           #if defined(DEVMODE)
-          SerialUSB.println(F("Not enough satelites"));
+          SerialUSB.println(F("Not enough sattelites"));
           #endif
         }
       }
@@ -421,6 +403,7 @@ void sleepSeconds(int sec) {
       }
     } 
      
+    
     Watchdog.reset();
     delay(1000);
     
@@ -477,7 +460,7 @@ void configureFreqbyLocation() {
 }
 
 
-void updatePosition(int high_precision, char *dao) {  
+void updatePosition(int high_precision, char *dao) {
   // Convert and set latitude NMEA string Degree Minute Hundreths of minutes ddmm.hh[S,N].
   char latStr[10];
   RawDegrees rawDeg = gps.location.rawLat();
@@ -512,7 +495,6 @@ void updatePosition(int high_precision, char *dao) {
 
 
 void updateTelemetry() {
- 
   sprintf(telemetry_buff, "%03d", gps.course.isValid() ? (int)gps.course.deg() : 0);
   telemetry_buff[3] = '/';
   sprintf(telemetry_buff + 4, "%03d", gps.speed.isValid() ? (int)gps.speed.knots() : 0);
@@ -532,7 +514,7 @@ void updateTelemetry() {
     sprintf(telemetry_buff + 10, "%06d", (long)tempAltitude);
     } 
   
-  telemetry_buff[16] = ' '; 
+  telemetry_buff[16] = ' ';
   sprintf(telemetry_buff + 17, "%03d", TxCount);
   telemetry_buff[20] = 'T';
   telemetry_buff[21] = 'x';
@@ -549,17 +531,18 @@ void updateTelemetry() {
   dtostrf(readBatt(), 5, 2, telemetry_buff + 43);
   telemetry_buff[48] = 'V';
   telemetry_buff[49] = ' ';
-  // sprintf(telemetry_buff + 50, "%02d", gps.satellites.isValid() ? (int)gps.satellites.value() : 0);
-  //telemetry_buff[52] = 'P';
-  // telemetry_buff[53] = 'P';
+  sprintf(telemetry_buff + 50, "%02d", gps.satellites.isValid() ? (int)gps.satellites.value() : 0);
+  telemetry_buff[52] = 'S';
+  telemetry_buff[53] = ' ';
+
+  sprintf(telemetry_buff + 54, "%s", comment);  
 
   int servoPos = servo.read();
   char servoBuffer[10];
   itoa(servoPos, servoBuffer, 10); // Convert int to char array
-  sprintf(telemetry_buff + 50, "%sP", servoBuffer); //                                       THIS IS WHERE THE REAL SENSOR DATA IS SENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  //dtostrf(myMPU9250.getPitch(), 6, 2, telemetry_buff + 53);
-  SerialUSB.println(servo.read());
-  
+  sprintf(telemetry_buff + 50, "%sP", servoBuffer); 
+  SerialUSB.println(servo.read()); 
+
   // APRS PRECISION AND DATUM OPTION http://www.aprs.org/aprs12/datum.txt ; this extension should be added at end of beacon message.
   // We only send this detailed info if it's likely we're interested in, i.e. searching for landing position
   if (send_aprs_enhanced_precision && gps.altitude.feet() < 10000L && strlen(telemetry_buff) < sizeof(telemetry_buff) - 1 - 5 - 1) /* room for " !wAB!\0" */ {
@@ -577,14 +560,6 @@ void updateTelemetry() {
 }
 
 void sendLocation() {
-
-// sensors_event_t event;
-  // bmp2.getEvent(&event);
-
-  // float seaLevelPressure = 1013.25;
-
-  // float temperature;
-  // bmp2.getTemperature(&temperature);
 
 #if defined(DEVMODE)
   SerialUSB.println(F("Location sending with comment"));
@@ -624,32 +599,45 @@ void sendLocation() {
     SerialUSB.println(TxCount);
     TxCount++;
 
+    prevAlt = alt;   
+    alt = gps.altitude.feet();
+    changedAlt = abs(prevAlt - alt);  
+
     if (!validAlt) {
-      if ((gps.altitude.feet() >= 2000) && gps.location.isValid()) { // put this code in if you want BMP readings: (bmp2.pressureToAltitude(seaLevelPressure, event.pressure, temperature)) >= 300 ||
+      if ((gps.altitude.feet() >= 2000) && gps.location.isValid()) { // if over 2000 feet, parachute becomes armed
         validAlt = true;
-        sw.digitalWrite(3, HIGH);
-    }
-  }
+        SerialUSB.println("Parachute armed");
+      }
+    } 
 
-  delay(5000);
-
-  if (!validAlt2) {
-      if ((gps.altitude.feet() >= 75000) && gps.location.isValid()) { // put this code in if you want BMP readings: (bmp2.pressureToAltitude(seaLevelPressure, event.pressure, temperature)) >= 300 ||
+    if (!validAlt2 && !isRecording) {
+      if ((gps.altitude.feet() >= 75000) && gps.location.isValid()) { // if over 75000 feet, turn on camera and start recording
+        sw.digitalWrite(2, HIGH); // camera on
+        SerialUSB.println("Camera on");
+        delay(10000);
+        digitalWrite(A2, HIGH); // recording starting
+        delay(350);
+        digitalWrite(A2, LOW);        
+        SerialUSB.println("Recording starting");
         validAlt2 = true;
-        sw.digitalWrite(2, HIGH);
+        isRecording = true;
+      }
     }
-  }
 
-  if (gps.location.isValid() && validAlt2 && (gps.altitude.feet() <= 100)) {
-    sw.digitalWrite(2, LOW); // Turns off camera recording
-    SerialUSB.println("Camera recording has stopped");
-    delay(5000);
-    sw.digitalWrite(3, LOW); // Turns off dvr and sensors
-    SerialUSB.println("DVR and sensors are off");   
-  }
+    if (validAlt2) {
+      if ((gps.altitude.feet() <= 3000) && gps.location.isValid() && (changedAlt < 50)) {
+        digitalWrite(A2, HIGH); // Turns off camera recording
+        delay(350);
+        digitalWrite(A2, LOW);      
+        SerialUSB.println("Camera recording has stopped");
+        delay(5000);
+        sw.digitalWrite(2, LOW); // Turns off dvr and sensors
+        SerialUSB.println("DVR and sensors are off");  
+      } 
+    }
 
-  if (gps.location.isValid() && validAlt && (gps.altitude.feet() <= 1000)) {
-    for (int counter = 10; counter > 0; counter--) {
+    if (gps.location.isValid() && validAlt && (gps.altitude.feet() <= 3000)) {
+      for (int counter = 10; counter > 0; counter--) {
         SerialUSB.println("Bombs away");
         delay(250);
         servo.write(90); // Servo is on pin A1
@@ -659,7 +647,6 @@ void sendLocation() {
 }
 
 void sendStatus() {
-  
   TcxoON;
   delay(10);
   Si4463ON;
@@ -682,10 +669,7 @@ void sendStatus() {
     analogWrite(A0, 128);
     PttON;
     delay(500);
-    float altFloat = bmp.readAltitude();
-    char altStr[10]; // char array to store converted string   
-    dtostrf(altFloat, 4, 2, altStr); // convert to char with parameters: input float, minimum width, number of decimal places, output string
-    APRS_sendStatus(StatusMessage); // Put altStr here if you want                                                         THIS IS WHERE INITIAL SENSOR DATA IS SENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    APRS_sendStatus(StatusMessage);
     delay(10);
     PttOFF;
     si4463.enterStandbyMode();
