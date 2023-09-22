@@ -4,7 +4,7 @@
  <img alt="YOUR-ALT-TEXT" src="YOUR-DEFAULT-IMAGE">
 </picture>
 
-# NOTE: This PCB is wrong. We had to change a wire. I suggest designing your own PCB.
+# NOTE: This PCB is wrong. We had to add a wire to the board. I suggest designing your own PCB.
 
 # StratoSoar
 My repo for the StratoSoar project. The LightAPRS code is just a variation of the original code. This system is made to recover unmanned high-altitude gliders, launched from weather balloons. It also has sensors that write to EEPROM, and the power for that system is controlled by the main MCU, which is the LightAPRS. For those who do not know, APRS is a form of HAM radio. You need to be a HAM radio operator to do it. For those who do not know, LightAPRS W-2 is a lightweight APRS transmitter: github.com/lightaprs/LightAPRS-W-2.0. The PCB takes anything from 20 to 6 volts as input and turns off the sensor and the camera after a certain altitude. It can also control the recording of the video. The schematic shows everything. The PCB breaks into three parts: top, middle, and bottom layers that connect through header pins.
